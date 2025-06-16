@@ -1,0 +1,483 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =======================
+// USER MANAGEMENT
+// =======================
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  username    String?  @unique
+  firstName   String
+  lastName    String
+  avatarUrl   String?
+  phone       String?
+  dateOfBirth DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Authentication
+  supabaseId String? @unique
+
+  // Role-based access
+  roles UserRole[]
+
+  // Club association
+  clubId String?
+  club   Club?   @relation(fields: [clubId], references: [id])
+
+  // Relationships
+  organizedTournaments Tournament[] @relation("TournamentOrganizer")
+  participations       Participant[]
+  matchesAsParticipant1 Match[]     @relation("MatchParticipant1")
+  matchesAsParticipant2 Match[]     @relation("MatchParticipant2")
+  matchesWon           Match[]      @relation("MatchWinner")
+  payments             Payment[]
+  matchEvents          MatchEvent[] @relation("MatchEventActor")
+
+  @@map("users")
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role
+
+  @@unique([userId, role])
+  @@map("user_roles")
+}
+
+// =======================
+// CLUB MANAGEMENT
+// =======================
+
+model Club {
+  id          String  @id @default(cuid())
+  name        String
+  address     String?
+  city        String?
+  state       String?
+  country     String?
+  website     String?
+  phone       String?
+  email       String?
+  logoUrl     String?
+  description String?
+  isActive    Boolean @default(true)
+
+  // Relationships
+  members User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clubs")
+}
+
+// =======================
+// TOURNAMENT MANAGEMENT
+// =======================
+
+model Tournament {
+  id               String              @id @default(cuid())
+  name             String
+  description      String?
+  discipline       MartialArtsDiscipline
+  ruleset          String              // JSON string for flexible rulesets
+  
+  // Location
+  venue            String
+  address          String
+  city             String
+  state            String?
+  country          String
+  
+  // Timing
+  startDate        DateTime
+  endDate          DateTime
+  registrationOpen DateTime
+  registrationClose DateTime
+  
+  // Settings
+  maxParticipants  Int?
+  entryFee         Decimal             @default(0) @db.Decimal(10, 2)
+  currency         Currency            @default(USD)
+  status           TournamentStatus    @default(DRAFT)
+  
+  // Custom fields for flexible rules
+  customRules      Json?
+  customFields     Json?
+  
+  // Organizer
+  organizerId      String
+  organizer        User                @relation("TournamentOrganizer", fields: [organizerId], references: [id])
+  
+  // Relationships
+  categories       Category[]
+  participants     Participant[]
+  matches          Match[]
+  payments         Payment[]
+  brackets         Bracket[]
+  
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("tournaments")
+}
+
+model Category {
+  id           String  @id @default(cuid())
+  name         String
+  
+  // Division criteria
+  gender       Gender
+  minAge       Int?
+  maxAge       Int?
+  minWeight    Decimal? @db.Decimal(5, 2)
+  maxWeight    Decimal? @db.Decimal(5, 2)
+  
+  // Discipline-specific criteria
+  beltLevel    String?  // Belt for BJJ, rank for other arts
+  skillLevel   SkillLevel?
+  experienceLevel ExperienceLevel?
+  isGi         Boolean? // For BJJ/Judo - gi vs nogi
+  
+  // Custom criteria for flexible categorization
+  customCriteria Json?
+  
+  // Tournament
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  
+  // Relationships
+  participants Participant[]
+  brackets     Bracket[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("categories")
+}
+
+// =======================
+// PARTICIPANT MANAGEMENT
+// =======================
+
+model Participant {
+  id          String            @id @default(cuid())
+  
+  // Registration details
+  weight      Decimal           @db.Decimal(5, 2)
+  beltLevel   String?           // Current belt/rank
+  skillLevel  SkillLevel?
+  experienceYears Int?
+  
+  // Status
+  status      ParticipantStatus @default(REGISTERED)
+  
+  // User, tournament, and category
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  tournamentId String
+  tournament  Tournament        @relation(fields: [tournamentId], references: [id])
+  categoryId  String
+  category    Category          @relation(fields: [categoryId], references: [id])
+  
+  // Payment
+  paymentId   String?           @unique
+  payment     Payment?          @relation(fields: [paymentId], references: [id])
+  
+  // Matches
+  matchesAsParticipant1 Match[] @relation("MatchParticipant1")
+  matchesAsParticipant2 Match[] @relation("MatchParticipant2")
+  matchesWon           Match[]  @relation("MatchWinner")
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([userId, tournamentId, categoryId])
+  @@map("participants")
+}
+
+// =======================
+// BRACKET & MATCH MANAGEMENT
+// =======================
+
+model Bracket {
+  id          String      @id @default(cuid())
+  name        String
+  type        BracketType @default(SINGLE_ELIMINATION)
+  
+  // Structure data for flexible bracket display
+  structure   Json?       // Stores bracket tree/structure
+  
+  // Tournament and category
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  categoryId   String
+  category     Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  // Matches
+  matches     Match[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("brackets")
+}
+
+model Match {
+  id          String      @id @default(cuid())
+  round       Int
+  position    Int
+  
+  // Participants (using Participant instead of User for better tournament context)
+  participant1Id String?
+  participant1   Participant? @relation("MatchParticipant1", fields: [participant1Id], references: [id])
+  participant2Id String?
+  participant2   Participant? @relation("MatchParticipant2", fields: [participant2Id], references: [id])
+  
+  // Results
+  winnerId    String?
+  winner      Participant? @relation("MatchWinner", fields: [winnerId], references: [id])
+  result      MatchResult?
+  
+  // Scoring (flexible JSON for different scoring systems)
+  scoreData   Json?       // Store points, advantages, penalties in flexible format
+  
+  // Time tracking
+  duration    Int?        // in seconds
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  
+  // Tournament and bracket
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  bracketId    String
+  bracket      Bracket    @relation(fields: [bracketId], references: [id])
+  
+  // Match metadata
+  status      MatchStatus @default(SCHEDULED)
+  notes       String?
+  
+  // Event logging
+  events      MatchEvent[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("matches")
+}
+
+model MatchEvent {
+  id            String   @id @default(cuid())
+  matchId       String   @map("match_id")
+  timestamp     DateTime @default(now())
+  actorId       String   @map("actor_id")
+  participantId String?  @map("participant_id")
+  eventType     String   @map("event_type")
+  value         String?
+  metadata      Json?
+  
+  // Relationships
+  match         Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  actor         User     @relation("MatchEventActor", fields: [actorId], references: [id])
+  
+  @@index([matchId])
+  @@index([timestamp])
+  @@index([eventType])
+  @@map("match_events")
+}
+
+// =======================
+// PAYMENT MANAGEMENT
+// =======================
+
+model Payment {
+  id              String        @id @default(cuid())
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        Currency      @default(USD)
+  status          PaymentStatus @default(PENDING)
+  
+  // Payment method details
+  method          PaymentMethod?
+  
+  // External payment IDs
+  stripePaymentId String?
+  stripeSessionId String?
+  kaspiQrCode     String?
+  kaspiTransactionId String?
+  applePayId      String?
+  googlePayId     String?
+  
+  // Metadata
+  metadata        Json?
+  failureReason   String?
+  
+  // User and tournament
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  tournamentId    String
+  tournament      Tournament    @relation(fields: [tournamentId], references: [id])
+  
+  // Relationships
+  participant     Participant?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+// =======================
+// ENUMS
+// =======================
+
+enum Role {
+  ADMIN
+  ORGANIZER
+  COMPETITOR
+  REFEREE
+  COACH
+}
+
+enum MartialArtsDiscipline {
+  BJJ
+  MMA
+  JUDO
+  SAMBO
+  GRAPPLING
+  WRESTLING
+  KICKBOXING
+  MUAY_THAI
+  KARATE
+  TAEKWONDO
+  BOXING
+  CUSTOM
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  MIXED
+  OTHER
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+  PROFESSIONAL
+}
+
+enum ExperienceLevel {
+  NOVICE        // 0-1 years
+  BEGINNER      // 1-3 years
+  INTERMEDIATE  // 3-6 years
+  ADVANCED      // 6-10 years
+  EXPERT        // 10+ years
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  KZT  // Kazakhstani Tenge for Kaspi
+  RUB
+  UAH
+}
+
+enum TournamentStatus {
+  DRAFT
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  BRACKETS_GENERATED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ParticipantStatus {
+  REGISTERED
+  CONFIRMED
+  PAID
+  CHECKED_IN
+  COMPETING
+  ELIMINATED
+  DISQUALIFIED
+  WITHDREW
+}
+
+enum BracketType {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+  SWISS_SYSTEM
+  CUSTOM
+}
+
+enum MatchStatus {
+  SCHEDULED
+  READY
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  WALKOVER
+}
+
+enum MatchResult {
+  SUBMISSION
+  TECHNICAL_SUBMISSION
+  POINTS
+  ADVANTAGE
+  REFEREE_DECISION
+  DISQUALIFICATION
+  FORFEIT
+  NO_CONTEST
+  DRAW
+  KNOCKOUT
+  TECHNICAL_KNOCKOUT
+  DECISION
+  SPLIT_DECISION
+  UNANIMOUS_DECISION
+  MAJORITY_DECISION
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentMethod {
+  STRIPE_CARD
+  STRIPE_BANK_TRANSFER
+  KASPI_QR
+  APPLE_PAY
+  GOOGLE_PAY
+  PAYPAL
+  BANK_TRANSFER
+  CASH
+  OTHER
+} 

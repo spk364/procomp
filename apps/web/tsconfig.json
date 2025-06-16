@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@procomp/ui": ["../../packages/ui/src"],
+      "@procomp/ui/*": ["../../packages/ui/src/*"],
+      "@procomp/utils": ["../../packages/utils/src"],
+      "@procomp/utils/*": ["../../packages/utils/src/*"],
+      "@procomp/db": ["../../packages/db/src"],
+      "@procomp/db/*": ["../../packages/db/src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+} 
