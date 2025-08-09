@@ -7,6 +7,7 @@ import { TournamentSelector } from './components/tournament-selector';
 import { MatchFilters } from './components/match-filters';
 import { MatchTable } from './components/match-table';
 import { useMatchWebSocket } from './hooks/use-match-websocket';
+import { useMatchStore } from './hooks/use-match-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui';
 import { Button } from '@procomp/ui';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -60,6 +61,7 @@ export interface MatchFilters {
 }
 
 export default function DashboardPage() {
+  const store = useMatchStore();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -81,14 +83,20 @@ export default function DashboardPage() {
   const { connectionStatus } = useMatchWebSocket({
     tournamentId: selectedTournament,
     onMatchUpdate: (updatedMatch: Match) => {
-      setMatches(prev => prev.map(match => 
-        match.id === updatedMatch.id ? updatedMatch : match
-      ));
+      setMatches(prev => {
+        const exists = prev.some(m => m.id === updatedMatch.id)
+        const next = exists ? prev.map(m => (m.id === updatedMatch.id ? updatedMatch : m)) : [updatedMatch, ...prev]
+        return next
+      });
+      try { store.reconcileFromWS(updatedMatch) } catch {}
     },
     onRefereeUpdate: (updatedReferee: Referee) => {
-      setReferees(prev => prev.map(referee =>
-        referee.id === updatedReferee.id ? updatedReferee : referee
-      ));
+      setReferees(prev => {
+        const exists = prev.some(r => r.id === updatedReferee.id)
+        const next = exists ? prev.map(r => (r.id === updatedReferee.id ? updatedReferee : r)) : [updatedReferee, ...prev]
+        return next
+      });
+      try { store.upsertReferee(updatedReferee) } catch {}
     },
   });
 
@@ -270,6 +278,14 @@ export default function DashboardPage() {
       setTimeout(() => setSelectedTournament(currentTournament), 100);
     }
   };
+
+  // push fetched data to store for search/sort
+  useEffect(() => {
+    if (matches.length) store.setMatches(matches)
+  }, [matches?.length])
+  useEffect(() => {
+    if (referees.length) store.setReferees(referees)
+  }, [referees?.length])
 
   if (loading) {
     return (

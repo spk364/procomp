@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Match, Referee } from '../page';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Button, Input } from '@procomp/ui';
+import { useMatchStore } from '../hooks/use-match-store';
+import { AssignRefereeDialog } from './assign-referee-dialog';
 
 interface MatchTableProps {
   matches: Match[];
@@ -12,11 +14,16 @@ interface MatchTableProps {
 }
 
 export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
+  const store = useMatchStore();
+  const matchesFromStore = useMatchStore(s => s.matches);
+  const refereesFromStore = useMatchStore(s => s.referees);
+  const sourceRows = matchesFromStore && matchesFromStore.length ? matchesFromStore : matches;
+  const visibleMatches = useMemo(() => store.applySearchAndSort(sourceRows), [store, sourceRows]);
   const [assigningReferee, setAssigningReferee] = useState<string | null>(null);
   const [exportingMatch, setExportingMatch] = useState<string | null>(null);
   const [resettingHud, setResettingHud] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  
 
   const getStatusBadge = (status: Match['status']) => {
     const badgeClass = status === 'active' 
@@ -77,20 +84,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
   const assignReferee = async (matchId: string, refereeId: string) => {
     try {
       setAssigningReferee(matchId);
-      
-      const { error } = await supabase
-        .from('matches')
-        .update({ referee_id: refereeId })
-        .eq('id', matchId);
-
-      if (error) throw error;
-
-      // Update referee availability
-      await supabase
-        .from('users')
-        .update({ available: false, current_match_id: matchId })
-        .eq('id', refereeId);
-
+      await store.assignReferee(matchId, refereeId)
       onRefresh();
     } catch (error: any) {
       console.error('Failed to assign referee:', error);
@@ -107,14 +101,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
   const resetHud = async (matchId: string) => {
     try {
       setResettingHud(matchId);
-      
-      const { error } = await supabase
-        .from('matches')
-        .update({ hud_active: false })
-        .eq('id', matchId);
-
-      if (error) throw error;
-
+      await store.toggleHud(matchId)
       onRefresh();
     } catch (error: any) {
       console.error('Failed to reset HUD:', error);
@@ -127,33 +114,24 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
   const exportMatch = async (match: Match, format: 'json' | 'pdf') => {
     try {
       setExportingMatch(match.id);
-      
       if (format === 'json') {
-        const dataStr = JSON.stringify(match, null, 2);
-        const dataBlob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(dataBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `match-${match.id}.json`;
-        link.click();
-        URL.revokeObjectURL(url);
+        const data = await import('../../../lib/api-client').then(m => m.api.exportMatch(match.id, 'json'))
+        const dataStr = JSON.stringify(data, null, 2)
+        const dataBlob = new Blob([dataStr], { type: 'application/json' })
+        const url = URL.createObjectURL(dataBlob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `match-${match.id}.json`
+        link.click()
+        URL.revokeObjectURL(url)
       } else {
-        // For PDF export, you would typically call a backend endpoint
-        const response = await fetch(`/api/matches/${match.id}/export`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ format: 'pdf' }),
-        });
-        
-        if (!response.ok) throw new Error('Export failed');
-        
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `match-${match.id}.pdf`;
-        link.click();
-        URL.revokeObjectURL(url);
+        const blob = await import('../../../lib/api-client').then(m => m.api.exportMatch(match.id, 'pdf' as any)) as Blob
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `match-${match.id}.pdf`
+        link.click()
+        URL.revokeObjectURL(url)
       }
     } catch (error: any) {
       console.error('Failed to export match:', error);
@@ -165,7 +143,12 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
 
   const availableReferees = referees.filter(r => r.available || !r.currentMatchId);
 
-  if (matches.length === 0) {
+  // expose referee list to store for name lookup
+  if (referees.length) {
+    store.setReferees(referees)
+  }
+
+  if (visibleMatches.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         No matches found
@@ -175,23 +158,39 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
 
   return (
     <div className="rounded-md border overflow-hidden">
+      <div className="p-2 flex items-center gap-2">
+        <Input
+          placeholder="Search matches..."
+          onChange={(e: ChangeEvent<HTMLInputElement>) => store.setSearchQuery(e.target.value)}
+          aria-label="Search matches"
+          className="max-w-xs"
+        />
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr className="border-b">
-              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Mat</th>
+              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                <button className="hover:underline" onClick={() => store.setSort('mat')} aria-label="Sort by Mat">Mat</button>
+              </th>
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Match</th>
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Athletes</th>
-              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
-              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Referee</th>
-              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden md:table-cell">Time</th>
+              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                <button className="hover:underline" onClick={() => store.setSort('status')} aria-label="Sort by Status">Status</button>
+              </th>
+              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                <button className="hover:underline" onClick={() => store.setSort('referee')} aria-label="Sort by Referee">Referee</button>
+              </th>
+              <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden md:table-cell">
+                <button className="hover:underline" onClick={() => store.setSort('updatedAt')} aria-label="Sort by Updated">Time</button>
+              </th>
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden lg:table-cell">Score</th>
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden lg:table-cell">HUD</th>
               <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {matches.map((match) => (
+            {visibleMatches.map((match) => (
               <tr key={match.id} className="border-b hover:bg-muted/50">
                 <td className="p-4 align-middle">
                   <div className="flex items-center gap-1">
@@ -280,65 +279,61 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
                 
                 <td className="p-4 align-middle text-right">
                   <div className="flex items-center justify-end gap-2">
-                    {/* Open Match Button */}
-                    <button
-                      onClick={() => openMatch(match.id)}
-                      className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                      title="Open Match"
-                    >
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <polygon points="5,3 19,12 5,21" />
-                      </svg>
-                    </button>
+                    {/* Open/Actions */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" aria-label="Actions" title="Actions">⋯</Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => openMatch(match.id)}>Open Match</DropdownMenuItem>
+                        {match.status !== 'active' && (
+                          <DropdownMenuItem onSelect={() => store.startMatch(match.id)}>Start</DropdownMenuItem>
+                        )}
+                        {match.status === 'active' && (
+                          <DropdownMenuItem onSelect={() => store.pauseMatch(match.id)}>Pause</DropdownMenuItem>
+                        )}
+                        {match.status !== 'completed' && (
+                          <DropdownMenuItem onSelect={() => store.endMatch(match.id)}>End</DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={() => exportMatch(match, 'json')}>Export JSON</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                    {/* Assign Referee Button */}
-                    <select
-                      onChange={(e) => e.target.value && assignReferee(match.id, e.target.value)}
+                    {/* Assign Referee */}
+                    <AssignRefereeDialog
+                      referees={availableReferees}
+                      onAssign={(refId) => assignReferee(match.id, refId)}
                       disabled={assigningReferee === match.id}
-                      className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-2"
-                      title="Assign Referee"
-                      defaultValue=""
-                    >
-                      <option value="">Referee</option>
-                      {availableReferees.map((referee) => (
-                        <option key={referee.id} value={referee.id}>
-                          {referee.name} {referee.available ? '(Available)' : '(Busy)'}
-                        </option>
-                      ))}
-                    </select>
+                      trigger={
+                        <Button variant="outline" size="icon" aria-label="Assign Referee" title="Assign Referee">
+                          R
+                        </Button>
+                      }
+                    />
 
-                    {/* Reset HUD Button */}
-                    <button
-                      onClick={() => {
-                        if (confirm('Reset HUD for this match?')) {
-                          resetHud(match.id);
-                        }
-                      }}
+                    {/* HUD toggle */}
+                    <Button
+                      onClick={() => resetHud(match.id)}
                       disabled={resettingHud === match.id}
-                      className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 w-8"
-                      title="Reset HUD"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Toggle HUD"
+                      title="Toggle HUD"
                     >
-                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <polyline points="1,4 1,10 7,10" />
-                        <path d="M3.51,15a9,9,0,0,0,2.13,3.09L7.5,16.5" />
-                        <polyline points="23,20 23,14 17,14" />
-                        <path d="M20.49,9A9,9,0,0,0,18.36,5.91L16.5,7.5" />
-                      </svg>
-                    </button>
+                      {match.hudActive ? '⦿' : '○'}
+                    </Button>
 
-                    {/* Export Menu */}
-                    <div className="relative">
-                      <button
+                                          {/* Export JSON shortcut */}
+                      <Button
                         onClick={() => exportMatch(match, 'json')}
                         disabled={exportingMatch === match.id}
-                        className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 w-8"
+                        variant="outline"
+                        size="icon"
+                        aria-label="Export JSON"
                         title="Export JSON"
                       >
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      </button>
-                    </div>
+                        ⤓
+                      </Button>
                   </div>
                 </td>
               </tr>
