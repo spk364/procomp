@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
     "lint": "next lint",
     "build": "next build",
     "dev": "next dev",

@@ -39,6 +39,8 @@ jobs:
         run: pnpm run lint
 
       - name: Build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
         run: pnpm run build
 
       - name: Upload web build artifact
