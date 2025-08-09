@@ -1,0 +1,116 @@
+name: db-migrate
+
+on:
+  pull_request:
+    types: [labeled]
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      mode:
+        description: 'Which mode to run (full|prod_canary)'
+        required: false
+        type: string
+        default: full
+
+concurrency:
+  group: db-migrate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrate_staging:
+    if: >-
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-migrations'))
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (inputs.mode == 'full')
+    name: Prisma migrate deploy (staging)
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Install deps (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run migrations (staging)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm prisma migrate deploy --schema packages/db/prisma/schema.prisma
+
+  db_smoke:
+    if: always()
+    needs: migrate_staging
+    name: DB smoke check
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Install deps (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Smoke query
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "select 1;" | pnpm prisma db execute --stdin --schema packages/db/prisma/schema.prisma
+
+  migrate_prod_canary:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (inputs.mode == 'prod_canary')
+    needs: db_smoke
+    name: Prisma migrate deploy (production canary)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Install deps (workspace)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run migrations (production canary)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Short timeout via env for DB connection if supported by driver
+          pnpm prisma migrate deploy --schema packages/db/prisma/schema.prisma

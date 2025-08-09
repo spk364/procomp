@@ -116,3 +116,22 @@ pnpm clean        # Clean build artifacts
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details. 
+
+## Security & Environments
+
+Create GitHub Environments: `staging`, `production`.
+
+Required secrets for both environments:
+
+- DATABASE_URL
+- REDIS_URL
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- STRIPE_SECRET_KEY
+- KASPI_API_KEY
+- VERCEL_TOKEN
+- VERCEL_ORG_ID
+- VERCEL_PROJECT_ID
+- RAILWAY_TOKEN
+
+Protect `production` with required reviewers. Ensure branch protection on `main` requires green checks (web-ci, api-ci, db-migrate, e2e) before deployment. 

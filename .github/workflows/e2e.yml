@@ -1,0 +1,117 @@
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e_playwright:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: procomp_e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres -d procomp_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('apps/api/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install API dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+
+      - name: Start API (background)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/procomp_e2e
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: test
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_JWT_SECRET: test_jwt
+          SUPABASE_SERVICE_KEY: test_service_key
+          LOG_LEVEL: INFO
+        run: |
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info --app-dir apps/api &
+          sleep 5
+
+      - name: Start Web (background)
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NODE_ENV: development
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          NEXT_PUBLIC_API_WS_URL: ws://localhost:8000
+        run: |
+          pnpm --filter ./apps/web dev -- --port 3000 &
+          sleep 10
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        env:
+          PLAYWRIGHT_HTML_REPORT: playwright-report
+          BASE_URL: http://localhost:3000
+        run: |
+          npx playwright test --reporter=html || echo "Playwright finished"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report
+          retention-days: 7

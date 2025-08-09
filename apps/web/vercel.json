@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm install --frozen-lockfile && pnpm build",
+  "devCommand": "pnpm dev",
+  "outputDirectory": ".next",
+  "ignoreCommand": "if [ \"$VERCEL_GIT_FORK\" = \"1\" ]; then exit 0; else exit 1; fi",
+  "framework": "nextjs"
+}
