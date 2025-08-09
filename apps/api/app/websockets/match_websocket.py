@@ -10,11 +10,11 @@ import logging
 from datetime import datetime
 from pydantic import BaseModel, ValidationError
 
-from app.core.auth import get_current_user_websocket
+from app.dependencies import get_current_user_websocket
 from app.models.match import Match, MatchState, ScoreAction
 from app.models.match_event import MatchEventType, MatchEventCreate
 from app.services.match_service import MatchService
-from services.match_event_service import MatchEventService
+from app.services.match_event_service import MatchEventService
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ async def websocket_endpoint(
     
     try:
         # Determine user role
-        user_role = "referee" if role == "referee" and current_user.role == "referee" else "viewer"
+        user_role = "referee" if role == "referee" and current_user.can_referee_matches() else "viewer"
         
         # Connect to match
         await manager.connect(websocket, match_id, current_user.id, user_role)

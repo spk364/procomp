@@ -1,5 +1,6 @@
 """Main API router with example authenticated endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.api.websockets import router as websockets_router
 from typing import List
 
 from app.dependencies import (
@@ -22,7 +23,6 @@ from app.routes.health import router as health_router
 # Create main API router
 api_router = APIRouter()
 
-# Mount sub-routers
 api_router.include_router(websockets_router)
 api_router.include_router(payments_router)
 api_router.include_router(health_router)

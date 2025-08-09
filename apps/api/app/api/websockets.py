@@ -8,6 +8,8 @@ import json
 from datetime import datetime
 import structlog
 
+from app.websockets.match_websocket import websocket_endpoint, get_match_connection_stats
+from app.dependencies import get_current_user_websocket
 from app.websockets.hub import get_hub
 
 logger = structlog.get_logger()
