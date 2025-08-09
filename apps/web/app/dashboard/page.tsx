@@ -12,6 +12,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@proc
 import { Button } from '@procomp/ui';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@procomp/ui';
+import { useSearchParams } from 'next/navigation';
+import { useToast } from '@procomp/ui';
+import { Suspense } from 'react';
 
 export interface Match {
   id: string;
@@ -60,8 +63,10 @@ export interface MatchFilters {
   status: 'all' | 'waiting' | 'active' | 'completed';
 }
 
-export default function DashboardPage() {
+function DashboardPageInner() {
   const store = useMatchStore();
+  const searchParams = useSearchParams();
+  const { toast } = useToast?.() || { toast: (args: any) => console.log(args) };
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -78,6 +83,36 @@ export default function DashboardPage() {
 
   const supabase = createClientComponentClient();
   const router = useRouter();
+
+  // Hydrate URL state on mount
+  useEffect(() => {
+    const tId = searchParams.get('t') || ''
+    const cat = searchParams.get('cat') || 'all'
+    const div = searchParams.get('div') || 'all'
+    const st = (searchParams.get('st') as any) || 'all'
+    const q = searchParams.get('q') || ''
+    const sortKey = (searchParams.get('sk') as any) || 'updatedAt'
+    const sortDir = (searchParams.get('sd') as any) || 'desc'
+    if (tId) setSelectedTournament(tId)
+    setFilters({ category: cat, division: div, status: st })
+    if (q) store.setSearchQuery(q)
+    try { store.setSortExplicit(sortKey, sortDir) } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Push URL state when changes occur
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (selectedTournament) params.set('t', selectedTournament); else params.delete('t')
+    params.set('cat', filters.category)
+    params.set('div', filters.division)
+    params.set('st', filters.status)
+    params.set('q', store.searchQuery || '')
+    params.set('sk', store.sortKey)
+    params.set('sd', store.sortDirection)
+    const query = params.toString()
+    router.replace(`/dashboard?${query}`)
+  }, [selectedTournament, filters, store.searchQuery, store.sortKey, store.sortDirection])
 
   // WebSocket connection for real-time updates
   const { connectionStatus } = useMatchWebSocket({
@@ -287,6 +322,11 @@ export default function DashboardPage() {
     if (referees.length) store.setReferees(referees)
   }, [referees?.length])
 
+  // Surface action errors (placeholder for future)
+  useEffect(() => {
+    // Could hook into store.pending/inFlight toasts here if needed
+  }, [])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -361,6 +401,16 @@ export default function DashboardPage() {
               matches={matches}
               filters={filters}
               onFiltersChange={setFilters}
+            />
+          </div>
+          {/* Search input bound to store */}
+          <div className="flex items-center gap-2">
+            <input
+              className="w-full md:max-w-sm h-9 rounded-md border bg-background px-3 text-sm"
+              placeholder="Search by athlete, division, mat, referee"
+              value={store.searchQuery}
+              onChange={(e) => store.setSearchQuery(e.target.value)}
+              aria-label="Search matches"
             />
           </div>
         </CardContent>
@@ -459,4 +509,12 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense>
+      <DashboardPageInner />
+    </Suspense>
+  )
 } 

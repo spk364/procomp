@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, type PersistOptions } from 'zustand/middleware'
 import type { Match, Referee } from '../page'
 import { api } from '../../../lib/api-client'
 
@@ -29,6 +29,7 @@ interface MatchStoreState {
 
   setSearchQuery: (q: string) => void
   setSort: (key: SortKey) => void
+  setSortExplicit: (key: SortKey, direction: SortDirection) => void
 
   applySearchAndSort: (rows: Match[]) => Match[]
 
@@ -65,8 +66,8 @@ function sortMatches(matches: Match[], key: SortKey, dir: SortDirection) {
 }
 
 export const useMatchStore = create<MatchStoreState>()(
-  persist(
-    (set: any, get: any) => ({
+  persist<MatchStoreState>(
+    (set, get) => ({
       matches: [],
       referees: [],
       searchQuery: '',
@@ -93,6 +94,7 @@ export const useMatchStore = create<MatchStoreState>()(
         sortKey: key,
         sortDirection: state.sortKey === key && state.sortDirection === 'asc' ? 'desc' : 'asc',
       })),
+      setSortExplicit: (key: SortKey, direction: SortDirection) => set({ sortKey: key, sortDirection: direction }),
 
       applySearchAndSort: (rows: Match[]) => {
         const { searchQuery, sortKey, sortDirection } = get() as MatchStoreState
@@ -239,6 +241,6 @@ export const useMatchStore = create<MatchStoreState>()(
     {
       name: 'match-store',
       partialize: (s: MatchStoreState) => ({ searchQuery: s.searchQuery, sortKey: s.sortKey, sortDirection: s.sortDirection })
-    }
+    } as PersistOptions<MatchStoreState>
   )
 )

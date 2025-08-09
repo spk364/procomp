@@ -3,7 +3,8 @@
 import { useState, useMemo, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Match, Referee } from '../page';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Button, Input } from '@procomp/ui';
+import { Button } from '@procomp/ui';
+import { useToast } from '@procomp/ui';
 import { useMatchStore } from '../hooks/use-match-store';
 import { AssignRefereeDialog } from './assign-referee-dialog';
 
@@ -15,14 +16,15 @@ interface MatchTableProps {
 
 export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
   const store = useMatchStore();
-  const matchesFromStore = useMatchStore(s => s.matches);
-  const refereesFromStore = useMatchStore(s => s.referees);
+  const matchesFromStore = useMatchStore((s: any) => s.matches);
+  const refereesFromStore = useMatchStore((s: any) => s.referees);
   const sourceRows = matchesFromStore && matchesFromStore.length ? matchesFromStore : matches;
   const visibleMatches = useMemo(() => store.applySearchAndSort(sourceRows), [store, sourceRows]);
   const [assigningReferee, setAssigningReferee] = useState<string | null>(null);
   const [exportingMatch, setExportingMatch] = useState<string | null>(null);
   const [resettingHud, setResettingHud] = useState<string | null>(null);
   const router = useRouter();
+  const { toast } = useToast?.() || { toast: (args: any) => console.log(args) };
   
 
   const getStatusBadge = (status: Match['status']) => {
@@ -86,9 +88,10 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
       setAssigningReferee(matchId);
       await store.assignReferee(matchId, refereeId)
       onRefresh();
+      toast({ title: 'Referee assigned', description: 'Referee has been assigned successfully.' })
     } catch (error: any) {
       console.error('Failed to assign referee:', error);
-      alert(`Failed to assign referee: ${error.message}`);
+      toast({ title: 'Failed to assign referee', description: error?.message || 'Unknown error', variant: 'destructive' })
     } finally {
       setAssigningReferee(null);
     }
@@ -103,9 +106,10 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
       setResettingHud(matchId);
       await store.toggleHud(matchId)
       onRefresh();
+      toast({ title: 'HUD toggled', description: 'HUD state has been updated.' })
     } catch (error: any) {
       console.error('Failed to reset HUD:', error);
-      alert(`Failed to reset HUD: ${error.message}`);
+      toast({ title: 'Failed to toggle HUD', description: error?.message || 'Unknown error', variant: 'destructive' })
     } finally {
       setResettingHud(null);
     }
@@ -133,9 +137,10 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
         link.click()
         URL.revokeObjectURL(url)
       }
+      toast({ title: 'Export ready', description: `Match ${match.id} exported as ${format}.` })
     } catch (error: any) {
       console.error('Failed to export match:', error);
-      alert(`Failed to export match: ${error.message}`);
+      toast({ title: 'Export failed', description: error?.message || 'Unknown error', variant: 'destructive' })
     } finally {
       setExportingMatch(null);
     }
@@ -158,14 +163,6 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
 
   return (
     <div className="rounded-md border overflow-hidden">
-      <div className="p-2 flex items-center gap-2">
-        <Input
-          placeholder="Search matches..."
-          onChange={(e: ChangeEvent<HTMLInputElement>) => store.setSearchQuery(e.target.value)}
-          aria-label="Search matches"
-          className="max-w-xs"
-        />
-      </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-muted/50">
@@ -190,7 +187,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
             </tr>
           </thead>
           <tbody>
-            {visibleMatches.map((match) => (
+            {visibleMatches.map((match: Match) => (
               <tr key={match.id} className="border-b hover:bg-muted/50">
                 <td className="p-4 align-middle">
                   <div className="flex items-center gap-1">
@@ -279,25 +276,17 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
                 
                 <td className="p-4 align-middle text-right">
                   <div className="flex items-center justify-end gap-2">
-                    {/* Open/Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="icon" aria-label="Actions" title="Actions">⋯</Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => openMatch(match.id)}>Open Match</DropdownMenuItem>
-                        {match.status !== 'active' && (
-                          <DropdownMenuItem onSelect={() => store.startMatch(match.id)}>Start</DropdownMenuItem>
-                        )}
-                        {match.status === 'active' && (
-                          <DropdownMenuItem onSelect={() => store.pauseMatch(match.id)}>Pause</DropdownMenuItem>
-                        )}
-                        {match.status !== 'completed' && (
-                          <DropdownMenuItem onSelect={() => store.endMatch(match.id)}>End</DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onSelect={() => exportMatch(match, 'json')}>Export JSON</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button variant="outline" onClick={() => openMatch(match.id)} aria-label="Open Match" title="Open Match">Open</Button>
+                    {match.status !== 'active' && (
+                      <Button variant="outline" onClick={() => store.startMatch(match.id)}>Start</Button>
+                    )}
+                    {match.status === 'active' && (
+                      <Button variant="outline" onClick={() => store.pauseMatch(match.id)}>Pause</Button>
+                    )}
+                    {match.status !== 'completed' && (
+                      <Button variant="outline" onClick={() => store.endMatch(match.id)}>End</Button>
+                    )}
+                    <Button variant="outline" onClick={() => exportMatch(match, 'json')}>Export</Button>
 
                     {/* Assign Referee */}
                     <AssignRefereeDialog
@@ -305,9 +294,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
                       onAssign={(refId) => assignReferee(match.id, refId)}
                       disabled={assigningReferee === match.id}
                       trigger={
-                        <Button variant="outline" size="icon" aria-label="Assign Referee" title="Assign Referee">
-                          R
-                        </Button>
+                        <Button variant="outline" aria-label="Assign Referee" title="Assign Referee">Assign</Button>
                       }
                     />
 
@@ -316,24 +303,22 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
                       onClick={() => resetHud(match.id)}
                       disabled={resettingHud === match.id}
                       variant="outline"
-                      size="icon"
                       aria-label="Toggle HUD"
                       title="Toggle HUD"
                     >
-                      {match.hudActive ? '⦿' : '○'}
+                      {match.hudActive ? 'HUD On' : 'HUD Off'}
                     </Button>
 
-                                          {/* Export JSON shortcut */}
-                      <Button
-                        onClick={() => exportMatch(match, 'json')}
-                        disabled={exportingMatch === match.id}
-                        variant="outline"
-                        size="icon"
-                        aria-label="Export JSON"
-                        title="Export JSON"
-                      >
-                        ⤓
-                      </Button>
+                    {/* Export JSON shortcut */}
+                    <Button
+                      onClick={() => exportMatch(match, 'json')}
+                      disabled={exportingMatch === match.id}
+                      variant="outline"
+                      aria-label="Export JSON"
+                      title="Export JSON"
+                    >
+                      JSON
+                    </Button>
                   </div>
                 </td>
               </tr>
