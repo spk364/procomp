@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { persist, type PersistOptions } from 'zustand/middleware'
 import type { Match, Referee } from '../page'
-import { api } from '../../../lib/api-client'
+import { api } from '../../../lib/api-client.runtime'
 
 export type SortKey = 'status' | 'mat' | 'referee' | 'updatedAt'
 export type SortDirection = 'asc' | 'desc'

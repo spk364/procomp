@@ -7,6 +7,7 @@
     "type-check": "tsc --noEmit",
     "lint": "next lint",
     "build": "next build",
+    "export": "next export -o out",
     "dev": "next dev",
     "start": "next start",
     "clean": "rm -rf .next",
