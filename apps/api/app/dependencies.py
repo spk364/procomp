@@ -3,8 +3,9 @@ from typing import Annotated, List, Optional, Union
 
 import httpx
 import structlog
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status, WebSocket, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import parse_qs
 
 from app.auth.jwt_auth import (
     extract_token_from_header,
@@ -115,6 +116,46 @@ async def get_current_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to authenticate user"
         )
+
+
+async def get_current_user_websocket(websocket: WebSocket) -> CurrentUser:
+    """Authenticate websocket connections using JWT from query param `token` or Authorization header."""
+    # Try query param first
+    token: Optional[str] = None
+    query = parse_qs(websocket.url.query or "") if websocket.url and websocket.url.query else {}
+    qp_tokens = query.get("token") if isinstance(query, dict) else None
+    if qp_tokens and len(qp_tokens) > 0:
+        token = qp_tokens[0]
+    
+    # Fallback to Authorization header
+    if not token:
+        auth_header = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+        if auth_header:
+            try:
+                _, tok = auth_header.split()
+                token = tok
+            except Exception:
+                pass
+    
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing websocket token")
+    
+    payload = await validate_jwt_token(token)
+    roles = extract_user_roles_from_payload(payload)
+    
+    # Construct minimal CurrentUser from token
+    current_user = CurrentUser(
+        id=payload.sub,
+        email=payload.email,
+        firstName=payload.user_metadata.get("first_name") if payload.user_metadata else payload.email.split("@")[0],
+        lastName=payload.user_metadata.get("last_name") if payload.user_metadata else "",
+        username=(payload.user_metadata or {}).get("username"),
+        avatarUrl=(payload.user_metadata or {}).get("avatar_url"),
+        supabaseId=payload.sub,
+        roles=roles,
+        isActive=True,
+    )
+    return current_user
 
 
 async def fetch_user_from_db(db: AsyncSession, supabase_id: str) -> Optional[dict]:

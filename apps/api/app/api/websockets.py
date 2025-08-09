@@ -7,7 +7,7 @@ from typing import Optional
 import logging
 
 from app.websockets.match_websocket import websocket_endpoint, get_match_connection_stats
-from app.core.auth import get_current_user_websocket
+from app.dependencies import get_current_user_websocket
 
 logger = logging.getLogger(__name__)
 

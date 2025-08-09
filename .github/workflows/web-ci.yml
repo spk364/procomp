@@ -1,17 +1,20 @@
-name: web-ci
+name: Web CI
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/web-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/web-ci.yml'
 
-concurrency:
-  group: web-ci-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  install_build_test:
-    name: Install, Lint, Typecheck, Build (web)
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,49 +23,26 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
           cache: 'pnpm'
 
-      - name: Setup PNPM
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 8
-          run_install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm run typecheck || pnpm run type-check
-
-      - name: Lint
-        run: pnpm run lint
+          run_install: true
 
       - name: Build
+        working-directory: apps/web
         env:
-          NEXT_TELEMETRY_DISABLED: 1
-        run: pnpm run build
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: pnpm build
 
-      - name: Upload web build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-build-${{ github.sha }}
-          path: |
-            apps/web/.next
-            apps/web/package.json
-            pnpm-lock.yaml
-          if-no-files-found: warn
-          retention-days: 7
-
-  preview_deploy:
-    if: github.event_name == 'pull_request'
-    needs: install_build_test
-    name: Preview Deploy to Vercel (web)
+  deploy:
+    name: Deploy to Railway (web)
     runs-on: ubuntu-latest
-    environment: staging
-    permissions:
-      pull-requests: write
-      contents: read
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && vars.RAILWAY_DEPLOY_WEB == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,87 +50,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
 
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-          run_install: false
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
 
-      - name: Install Vercel CLI
-        run: pnpm dlx vercel@latest --version
-
-      - name: Vercel pull (preview)
-        working-directory: apps/web
+      - name: Link Railway project
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: pnpm dlx vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
-
-      - name: Create Vercel preview deployment
-        id: vercel_deploy
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
-          url=$(pnpm -s dlx vercel deploy --token=$VERCEL_TOKEN --scope $VERCEL_ORG_ID --yes --prod=false | tail -n1)
-          echo "preview_url=$url" >> $GITHUB_OUTPUT
+          railway link --project $RAILWAY_PROJECT_ID
 
-      - name: Comment preview URL on PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const url = process.env.PREVIEW_URL;
-            const body = `Vercel preview deployment: ${url}`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
-        env:
-          PREVIEW_URL: ${{ steps.vercel_deploy.outputs.preview_url }}
-
-  prod_deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: install_build_test
-    name: Production Deploy to Vercel (web)
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-          run_install: false
-
-      - name: Install Vercel CLI
-        run: pnpm dlx vercel@latest --version
-
-      - name: Vercel pull (production)
+      - name: Deploy service web
         working-directory: apps/web
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: pnpm dlx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-
-      - name: Deploy to production
-        working-directory: apps/web
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: pnpm -s dlx vercel deploy --prod --token=$VERCEL_TOKEN --scope $VERCEL_ORG_ID --yes
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --service web --detach

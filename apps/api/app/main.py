@@ -83,6 +83,11 @@ def create_application() -> FastAPI:
     async def health_check() -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "healthy", "service": "procomp-api"}
+
+    @app.get("/livez")
+    async def livez() -> dict[str, str]:
+        """Liveness probe endpoint."""
+        return {"status": "ok"}
     
     return app
 

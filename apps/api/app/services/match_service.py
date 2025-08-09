@@ -13,7 +13,7 @@ from app.models.match import (
     apply_score_action, create_initial_score, is_match_finished
 )
 from app.models.match_event import MatchEventType, MatchEventCreate
-from services.match_event_service import MatchEventService
+from app.services.match_event_service import MatchEventService
 from app.core.database import get_db
 from app.core.exceptions import NotFoundError, ValidationError, PermissionError
 
