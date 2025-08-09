@@ -12,6 +12,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import get_settings
 from app.core.database import create_db_and_tables
 from app.api.routes import api_router
+from app.websockets.hub import get_hub
+from app.services.payment_service import get_kaspi_payment_service
 
 # Configure structured logging
 structlog.configure(
@@ -44,9 +46,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize database
     await create_db_and_tables()
     logger.info("Database initialized")
+
+    # Start hub and payment polling worker
+    await get_hub().start()
+    await get_kaspi_payment_service().start()
     
     yield
     
+    # Stop background services
+    await get_kaspi_payment_service().stop()
+    await get_hub().stop()
+
     logger.info("Shutting down ProComp API")
 
 
