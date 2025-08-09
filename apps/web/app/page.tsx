@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@procomp/ui';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui';
