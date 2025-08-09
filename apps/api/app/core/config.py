@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = Field(default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30)
 
+    # Redis / Realtime
+    REDIS_URL: str = Field(default="redis://localhost:6379/0")
+    WS_PING_INTERVAL_SECONDS: int = Field(default=25)
+    WS_IDLE_TIMEOUT_SECONDS: int = Field(default=90)
+
 
 @lru_cache()
 def get_settings() -> Settings:

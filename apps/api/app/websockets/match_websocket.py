@@ -1,6 +1,5 @@
 """
-WebSocket endpoint for real-time match updates
-Handles referee inputs and broadcasts to HUD consumers
+Deprecated: logic moved to hub-backed endpoints in app/api/websockets.py
 """
 
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
