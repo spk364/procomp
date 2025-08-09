@@ -25,6 +25,7 @@ jobs:
       || (inputs.mode == 'full')
     name: Prisma migrate deploy (staging)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: staging
     steps:
       - name: Checkout
@@ -35,6 +36,7 @@ jobs:
         with:
           node-version: 18
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v4
@@ -55,6 +57,7 @@ jobs:
     needs: migrate_staging
     name: DB smoke check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: staging
     steps:
       - name: Checkout
@@ -65,6 +68,7 @@ jobs:
         with:
           node-version: 18
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v4
@@ -88,6 +92,7 @@ jobs:
     needs: db_smoke
     name: Prisma migrate deploy (production canary)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: production
     steps:
       - name: Checkout
@@ -98,6 +103,7 @@ jobs:
         with:
           node-version: 18
           cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v4
@@ -112,5 +118,4 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          # Short timeout via env for DB connection if supported by driver
           pnpm prisma migrate deploy --schema packages/db/prisma/schema.prisma
