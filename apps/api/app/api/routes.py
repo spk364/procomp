@@ -16,11 +16,16 @@ from app.dependencies import (
 )
 from app.models.user import CurrentUser, Role, UserResponse
 
+from app.api.websockets import router as websockets_router
+from app.routes.payments import router as payments_router
+from app.routes.health import router as health_router
+
 # Create main API router
 api_router = APIRouter()
 
-# Include websocket routes under the same API prefix
 api_router.include_router(websockets_router)
+api_router.include_router(payments_router)
+api_router.include_router(health_router)
 
 
 # ===== AUTHENTICATION EXAMPLES =====
