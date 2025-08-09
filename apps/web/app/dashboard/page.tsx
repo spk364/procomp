@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import { TournamentSelector } from './components/tournament-selector';
 import { MatchFilters } from './components/match-filters';
 import { MatchTable } from './components/match-table';
-import { useMatchWebSocket } from './hooks/use-match-websocket';
+import { isPagesDemo } from '../../lib/runtime'
+import { useMatchWebSocket } from '../../lib/use-tournament-websocket.runtime';
+import { getDemoTournaments, getDemoMatches, getDemoReferees } from '../../lib/demo/mocks'
 import { useMatchStore } from './hooks/use-match-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui';
 import { Button } from '@procomp/ui';
@@ -100,6 +102,16 @@ function DashboardPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Demo: bootstrap without Supabase
+  useEffect(() => {
+    if (!isPagesDemo) return
+    setUser({ id: 'demo-user', role: 'organizer' })
+    setLoading(false)
+    const ts = getDemoTournaments()
+    setTournaments(ts)
+    if (ts.length && !selectedTournament) setSelectedTournament(ts[0].id)
+  }, [selectedTournament])
+
   // Push URL state when changes occur
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString())
@@ -137,6 +149,7 @@ function DashboardPageInner() {
 
   // Auth check and user data fetch
   useEffect(() => {
+    if (isPagesDemo) return
     async function checkAuth() {
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -175,6 +188,7 @@ function DashboardPageInner() {
 
   // Fetch tournaments
   useEffect(() => {
+    if (isPagesDemo) return
     async function fetchTournaments() {
       if (!user) return;
 
@@ -202,6 +216,12 @@ function DashboardPageInner() {
 
   // Fetch matches for selected tournament
   useEffect(() => {
+    if (isPagesDemo) {
+      if (!selectedTournament) { setMatches([]); return }
+      const data = getDemoMatches(selectedTournament)
+      setMatches(data)
+      return
+    }
     async function fetchMatches() {
       if (!selectedTournament) {
         setMatches([]);
@@ -262,6 +282,11 @@ function DashboardPageInner() {
 
   // Fetch referees
   useEffect(() => {
+    if (isPagesDemo) {
+      const refs = getDemoReferees()
+      setReferees(refs)
+      return
+    }
     async function fetchReferees() {
       try {
         const { data, error } = await supabase

@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+const isPagesDemo = process.env.NEXT_PUBLIC_DEMO_PAGES === '1'
+const repoName = (process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : '') || process.env.NEXT_PUBLIC_BASE_PATH || ''
+
 const nextConfig = {
   experimental: {
     // Enable React Compiler when available
@@ -55,5 +58,15 @@ const nextConfig = {
     ];
   },
 };
+
+if (isPagesDemo) {
+  nextConfig.output = 'export'
+  nextConfig.images = { ...(nextConfig.images || {}), unoptimized: true }
+  if (repoName) {
+    const base = `/${repoName}`
+    nextConfig.basePath = base
+    nextConfig.assetPrefix = base
+  }
+}
 
 module.exports = nextConfig; 

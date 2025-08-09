@@ -1,0 +1,1 @@
+export const isPagesDemo = process.env.NEXT_PUBLIC_DEMO_PAGES === '1'

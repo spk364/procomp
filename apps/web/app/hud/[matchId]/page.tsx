@@ -2,7 +2,8 @@
 
 import { useParams } from 'next/navigation'
 import { Badge } from '@procomp/ui'
-import { MatchState, useMatchHUD } from '@procomp/utils'
+import { MatchState } from '@procomp/utils'
+import { useMatchHUD } from '../../../lib/use-tournament-websocket.runtime'
 
 const HUDTimer = ({ timeRemaining, state }: { 
   timeRemaining: number

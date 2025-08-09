@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui'
 import { Badge } from '@procomp/ui'
 import { Button } from '@procomp/ui'
 import { useToast } from '@procomp/ui'
 import { PlayIcon, PauseIcon, Square, RotateCcw } from 'lucide-react'
-import { Match, MatchState, ScoreAction, getMatchWinner, useMatchWebSocket } from '@procomp/utils'
+import { Match, MatchState, ScoreAction, getMatchWinner } from '@procomp/utils'
+import { useMatchWebSocket } from '../../../lib/use-tournament-websocket.runtime'
 
 // Components
 const MatchTimer = ({ timeRemaining, duration, state }: { 
@@ -137,8 +138,9 @@ const ScoreCard = ({
 // Main component
 export default function RefereePage() {
   const router = useRouter()
+  const params = useParams()
   const { toast } = useToast()
-  const matchId = 'match-1' // TODO: Get from params
+  const matchId = (params as any)?.matchId || 'm-1'
   const [isLoading, setIsLoading] = useState(true)
   const [matchWinner, setMatchWinner] = useState<string | null>(null)
 

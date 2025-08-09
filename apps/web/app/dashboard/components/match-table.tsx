@@ -119,7 +119,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
     try {
       setExportingMatch(match.id);
       if (format === 'json') {
-        const data = await import('../../../lib/api-client').then(m => m.api.exportMatch(match.id, 'json'))
+        const data = await import('../../../lib/api-client.runtime').then(m => m.api.exportMatch(match.id, 'json'))
         const dataStr = JSON.stringify(data, null, 2)
         const dataBlob = new Blob([dataStr], { type: 'application/json' })
         const url = URL.createObjectURL(dataBlob)
@@ -129,7 +129,7 @@ export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
         link.click()
         URL.revokeObjectURL(url)
       } else {
-        const blob = await import('../../../lib/api-client').then(m => m.api.exportMatch(match.id, 'pdf' as any)) as Blob
+        const blob = await import('../../../lib/api-client.runtime').then(m => m.api.exportMatch(match.id, 'pdf' as any)) as Blob
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
