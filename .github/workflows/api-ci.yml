@@ -1,0 +1,190 @@
+name: api-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test_api:
+    name: Test API (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: procomp_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d procomp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/procomp_test
+      REDIS_URL: redis://localhost:6379
+      ENVIRONMENT: test
+      SUPABASE_URL: http://localhost:54321
+      SUPABASE_JWT_SECRET: test_jwt
+      SUPABASE_SERVICE_KEY: test_service_key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('apps/api/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/api/requirements.txt
+
+      - name: Run pytest with coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: pytest -q --maxfail=1 --disable-warnings --cov=apps/api --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 7
+
+  docker_build_publish:
+    name: Build and Publish API Docker image
+    runs-on: ubuntu-latest
+    needs: test_api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-api
+          tags: |
+            type=ref,event=branch
+            type=sha
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/api
+          file: ./apps/api/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  db_migrate_prod_canary:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: DB migrate prod canary (reusable)
+    uses: ./.github/workflows/db-migrate.yml
+    with:
+      mode: prod_canary
+    secrets: inherit
+
+  preview_deploy:
+    if: github.event_name == 'pull_request'
+    name: Preview deploy to Railway (staging)
+    runs-on: ubuntu-latest
+    needs: docker_build_publish
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli@latest
+
+      - name: Deploy to Railway (staging)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        working-directory: apps/api
+        run: |
+          railway status || true
+          railway up --ci --service="procomp-api-staging"
+
+      - name: Healthcheck staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Attempt to fetch deployment URL and probe /livez then /health
+          url=$(railway status --json | jq -r '.services[]?.url // empty' | head -n1)
+          echo "Service URL: $url"
+          if [ -n "$url" ]; then
+            curl -fsS "$url/livez" || curl -fsS "$url/health"
+          else
+            echo "No URL found from Railway status" && exit 0
+          fi
+
+  prod_deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Production deploy to Railway
+    runs-on: ubuntu-latest
+    needs: [docker_build_publish, test_api, db_migrate_prod_canary]
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli@latest
+
+      - name: Deploy to Railway (production)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        working-directory: apps/api
+        run: |
+          railway up --ci --service="procomp-api"
+
+      - name: Healthcheck production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          url=$(railway status --json | jq -r '.services[]?.url // empty' | head -n1)
+          echo "Service URL: $url"
+          if [ -z "$url" ]; then echo "No URL found" && exit 1; fi
+          if curl -fsS "$url/livez" || curl -fsS "$url/health"; then
+            echo OK
+          else
+            echo "Healthcheck failed, attempting rollback" && exit 1
+          fi

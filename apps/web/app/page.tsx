@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Button } from '@procomp/ui/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui/components/ui/card';
+import { Button } from '@procomp/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@procomp/ui';
 
 export default function HomePage() {
   return (
