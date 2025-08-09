@@ -30,7 +30,7 @@ interface MatchStoreState {
   setSearchQuery: (q: string) => void
   setSort: (key: SortKey) => void
 
-  getVisibleMatches: () => Match[]
+  applySearchAndSort: (rows: Match[]) => Match[]
 
   // optimistic actions
   assignReferee: (matchId: string, refereeId: string) => Promise<void>
@@ -66,7 +66,7 @@ function sortMatches(matches: Match[], key: SortKey, dir: SortDirection) {
 
 export const useMatchStore = create<MatchStoreState>()(
   persist(
-    (set, get) => ({
+    (set: any, get: any) => ({
       matches: [],
       referees: [],
       searchQuery: '',
@@ -75,30 +75,30 @@ export const useMatchStore = create<MatchStoreState>()(
       pending: {},
       inFlight: {},
 
-      setMatches: (matches) => set({ matches }),
-      upsertMatch: (match) => set(state => ({
-        matches: state.matches.some(m => m.id === match.id)
-          ? state.matches.map(m => (m.id === match.id ? match : m))
+      setMatches: (matches: Match[]) => set({ matches }),
+      upsertMatch: (match: Match) => set((state: MatchStoreState) => ({
+        matches: state.matches.some((m: Match) => m.id === match.id)
+          ? state.matches.map((m: Match) => (m.id === match.id ? match : m))
           : [match, ...state.matches],
       })),
-      setReferees: (refs) => set({ referees: refs }),
-      upsertReferee: (ref) => set(state => ({
-        referees: state.referees.some(r => r.id === ref.id)
-          ? state.referees.map(r => (r.id === ref.id ? ref : r))
+      setReferees: (refs: Referee[]) => set({ referees: refs }),
+      upsertReferee: (ref: Referee) => set((state: MatchStoreState) => ({
+        referees: state.referees.some((r: Referee) => r.id === ref.id)
+          ? state.referees.map((r: Referee) => (r.id === ref.id ? ref : r))
           : [ref, ...state.referees],
       })),
 
-      setSearchQuery: (q) => set({ searchQuery: q }),
-      setSort: (key) => set(state => ({
+      setSearchQuery: (q: string) => set({ searchQuery: q }),
+      setSort: (key: SortKey) => set((state: MatchStoreState) => ({
         sortKey: key,
         sortDirection: state.sortKey === key && state.sortDirection === 'asc' ? 'desc' : 'asc',
       })),
 
-      getVisibleMatches: () => {
-        const { matches, searchQuery, sortKey, sortDirection } = get()
+      applySearchAndSort: (rows: Match[]) => {
+        const { searchQuery, sortKey, sortDirection } = get() as MatchStoreState
         const q = normalize(searchQuery)
         const filtered = q
-          ? matches.filter(m =>
+          ? rows.filter((m: Match) =>
               normalize(m.category).includes(q) ||
               normalize(m.division).includes(q) ||
               normalize(m.athlete1Name).includes(q) ||
@@ -106,141 +106,139 @@ export const useMatchStore = create<MatchStoreState>()(
               normalize(m.refereeName).includes(q) ||
               String(m.matNumber || '').includes(q)
             )
-          : matches
+          : rows
         return sortMatches(filtered, sortKey, sortDirection)
       },
 
-      async assignReferee(matchId, refereeId) {
-        const state = get()
+      async assignReferee(matchId: string, refereeId: string) {
+        const state = get() as MatchStoreState
         if (state.inFlight[matchId]) return
-        const current = state.matches.find(m => m.id === matchId)
+        const current = state.matches.find((m: Match) => m.id === matchId)
         if (!current) return
         const prev: Partial<Match> = { refereeId: current.refereeId, refereeName: current.refereeName }
-        const ref = state.referees.find(r => r.id === refereeId)
+        const ref = state.referees.find((r: Referee) => r.id === refereeId)
         const next: Partial<Match> = { refereeId, refereeName: ref?.name, updatedAt: new Date().toISOString() }
-        set(s => ({
-          matches: s.matches.map(m => m.id === matchId ? { ...m, ...next } : m),
+        set((s: MatchStoreState) => ({
+          matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...next } : m),
           pending: { ...s.pending, [matchId]: { prev, next } },
           inFlight: { ...s.inFlight, [matchId]: true },
         }))
         try {
           const updated = await api.assignReferee(matchId, refereeId)
-          get().reconcileFromWS(updated as Match)
+          ;(get() as MatchStoreState).reconcileFromWS(updated as Match)
         } catch (e) {
-          // rollback
-          set(s => ({
-            matches: s.matches.map(m => m.id === matchId ? { ...m, ...prev } : m),
+          set((s: MatchStoreState) => ({
+            matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...prev } : m),
           }))
           throw e
         } finally {
-          set(s => ({
+          set((s: MatchStoreState) => ({
             pending: { ...s.pending, [matchId]: undefined },
             inFlight: { ...s.inFlight, [matchId]: false },
           }))
         }
       },
 
-      async startMatch(matchId) {
-        const state = get()
+      async startMatch(matchId: string) {
+        const state = get() as MatchStoreState
         if (state.inFlight[matchId]) return
-        const prev = state.matches.find(m => m.id === matchId)
+        const prev = state.matches.find((m: Match) => m.id === matchId)
         if (!prev) return
         const optimistic: Partial<Match> = { status: 'active', startTime: prev.startTime ?? new Date().toISOString(), updatedAt: new Date().toISOString() }
-        set(s => ({
-          matches: s.matches.map(m => m.id === matchId ? { ...m, ...optimistic } : m),
+        set((s: MatchStoreState) => ({
+          matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...optimistic } : m),
           pending: { ...s.pending, [matchId]: { prev, next: optimistic } },
           inFlight: { ...s.inFlight, [matchId]: true },
         }))
         try {
           const updated = await api.startMatch(matchId)
-          get().reconcileFromWS(updated as Match)
+          ;(get() as MatchStoreState).reconcileFromWS(updated as Match)
         } catch (e) {
-          set(s => ({ matches: s.matches.map(m => m.id === matchId ? (prev as Match) : m) }))
+          set((s: MatchStoreState) => ({ matches: s.matches.map((m: Match) => m.id === matchId ? (prev as Match) : m) }))
           throw e
         } finally {
-          set(s => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
+          set((s: MatchStoreState) => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
         }
       },
 
-      async pauseMatch(matchId) {
-        const state = get()
+      async pauseMatch(matchId: string) {
+        const state = get() as MatchStoreState
         if (state.inFlight[matchId]) return
-        const prev = state.matches.find(m => m.id === matchId)
+        const prev = state.matches.find((m: Match) => m.id === matchId)
         if (!prev) return
         const optimistic: Partial<Match> = { status: 'waiting', updatedAt: new Date().toISOString() }
-        set(s => ({
-          matches: s.matches.map(m => m.id === matchId ? { ...m, ...optimistic } : m),
+        set((s: MatchStoreState) => ({
+          matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...optimistic } : m),
           pending: { ...s.pending, [matchId]: { prev, next: optimistic } },
           inFlight: { ...s.inFlight, [matchId]: true },
         }))
         try {
           const updated = await api.pauseMatch(matchId)
-          get().reconcileFromWS(updated as Match)
+          ;(get() as MatchStoreState).reconcileFromWS(updated as Match)
         } catch (e) {
-          set(s => ({ matches: s.matches.map(m => m.id === matchId ? (prev as Match) : m) }))
+          set((s: MatchStoreState) => ({ matches: s.matches.map((m: Match) => m.id === matchId ? (prev as Match) : m) }))
           throw e
         } finally {
-          set(s => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
+          set((s: MatchStoreState) => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
         }
       },
 
-      async endMatch(matchId) {
-        const state = get()
+      async endMatch(matchId: string) {
+        const state = get() as MatchStoreState
         if (state.inFlight[matchId]) return
-        const prev = state.matches.find(m => m.id === matchId)
+        const prev = state.matches.find((m: Match) => m.id === matchId)
         if (!prev) return
         const optimistic: Partial<Match> = { status: 'completed', endTime: new Date().toISOString(), updatedAt: new Date().toISOString() }
-        set(s => ({
-          matches: s.matches.map(m => m.id === matchId ? { ...m, ...optimistic } : m),
+        set((s: MatchStoreState) => ({
+          matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...optimistic } : m),
           pending: { ...s.pending, [matchId]: { prev, next: optimistic } },
           inFlight: { ...s.inFlight, [matchId]: true },
         }))
         try {
           const updated = await api.endMatch(matchId)
-          get().reconcileFromWS(updated as Match)
+          ;(get() as MatchStoreState).reconcileFromWS(updated as Match)
         } catch (e) {
-          set(s => ({ matches: s.matches.map(m => m.id === matchId ? (prev as Match) : m) }))
+          set((s: MatchStoreState) => ({ matches: s.matches.map((m: Match) => m.id === matchId ? (prev as Match) : m) }))
           throw e
         } finally {
-          set(s => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
+          set((s: MatchStoreState) => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
         }
       },
 
-      async toggleHud(matchId) {
-        const state = get()
+      async toggleHud(matchId: string) {
+        const state = get() as MatchStoreState
         if (state.inFlight[matchId]) return
-        const prev = state.matches.find(m => m.id === matchId)
+        const prev = state.matches.find((m: Match) => m.id === matchId)
         if (!prev) return
         const optimistic: Partial<Match> = { hudActive: !prev.hudActive, updatedAt: new Date().toISOString() }
-        set(s => ({
-          matches: s.matches.map(m => m.id === matchId ? { ...m, ...optimistic } : m),
+        set((s: MatchStoreState) => ({
+          matches: s.matches.map((m: Match) => m.id === matchId ? { ...m, ...optimistic } : m),
           pending: { ...s.pending, [matchId]: { prev, next: optimistic } },
           inFlight: { ...s.inFlight, [matchId]: true },
         }))
         try {
           const updated = await api.toggleHud(matchId)
-          get().reconcileFromWS(updated as Match)
+          ;(get() as MatchStoreState).reconcileFromWS(updated as Match)
         } catch (e) {
-          set(s => ({ matches: s.matches.map(m => m.id === matchId ? (prev as Match) : m) }))
+          set((s: MatchStoreState) => ({ matches: s.matches.map((m: Match) => m.id === matchId ? (prev as Match) : m) }))
           throw e
         } finally {
-          set(s => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
+          set((s: MatchStoreState) => ({ pending: { ...s.pending, [matchId]: undefined }, inFlight: { ...s.inFlight, [matchId]: false } }))
         }
       },
 
-      reconcileFromWS: (incoming) => set(state => {
-        // If we had a pending change, prefer server truth and clear pending
-        const nextMatches = state.matches.map(m => m.id === incoming.id ? { ...m, ...incoming } : m)
+      reconcileFromWS: (incoming: Match) => set((state: MatchStoreState) => {
+        const nextMatches = state.matches.map((m: Match) => m.id === incoming.id ? { ...m, ...incoming } : m)
         const newPending = { ...state.pending }
         delete newPending[incoming.id]
         const newInFlight = { ...state.inFlight }
         delete newInFlight[incoming.id]
-        return { matches: nextMatches, pending: newPending, inFlight: newInFlight }
+        return { matches: nextMatches, pending: newPending, inFlight: newInFlight } as Partial<MatchStoreState>
       }),
     }),
     {
       name: 'match-store',
-      partialize: (s) => ({ searchQuery: s.searchQuery, sortKey: s.sortKey, sortDirection: s.sortDirection })
+      partialize: (s: MatchStoreState) => ({ searchQuery: s.searchQuery, sortKey: s.sortKey, sortDirection: s.sortDirection })
     }
   )
 )
