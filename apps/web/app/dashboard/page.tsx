@@ -88,7 +88,7 @@ export default function DashboardPage() {
         const next = exists ? prev.map(m => (m.id === updatedMatch.id ? updatedMatch : m)) : [updatedMatch, ...prev]
         return next
       });
-      store.reconcileFromWS(updatedMatch);
+      try { store.reconcileFromWS(updatedMatch) } catch {}
     },
     onRefereeUpdate: (updatedReferee: Referee) => {
       setReferees(prev => {
@@ -96,7 +96,7 @@ export default function DashboardPage() {
         const next = exists ? prev.map(r => (r.id === updatedReferee.id ? updatedReferee : r)) : [updatedReferee, ...prev]
         return next
       });
-      store.upsertReferee(updatedReferee);
+      try { store.upsertReferee(updatedReferee) } catch {}
     },
   });
 
@@ -282,10 +282,10 @@ export default function DashboardPage() {
   // push fetched data to store for search/sort
   useEffect(() => {
     if (matches.length) store.setMatches(matches)
-  }, [matches, store])
+  }, [matches?.length])
   useEffect(() => {
     if (referees.length) store.setReferees(referees)
-  }, [referees, store])
+  }, [referees?.length])
 
   if (loading) {
     return (

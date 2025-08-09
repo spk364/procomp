@@ -15,7 +15,10 @@ interface MatchTableProps {
 
 export function MatchTable({ matches, referees, onRefresh }: MatchTableProps) {
   const store = useMatchStore();
-  const visibleMatches = useMemo(() => store.applySearchAndSort(matches), [store, matches]);
+  const matchesFromStore = useMatchStore(s => s.matches);
+  const refereesFromStore = useMatchStore(s => s.referees);
+  const sourceRows = matchesFromStore && matchesFromStore.length ? matchesFromStore : matches;
+  const visibleMatches = useMemo(() => store.applySearchAndSort(sourceRows), [store, sourceRows]);
   const [assigningReferee, setAssigningReferee] = useState<string | null>(null);
   const [exportingMatch, setExportingMatch] = useState<string | null>(null);
   const [resettingHud, setResettingHud] = useState<string | null>(null);
